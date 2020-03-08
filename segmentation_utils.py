@@ -16,7 +16,7 @@ def get_largest_bbox(image):
     x,y,w,h = cv2.boundingRect(biggest_contour)
     return image[y:y+h,x:x+w,:]
 
-def extract_contour(image):
+def extract_contour(image, recovery_image=None):
     """
     Mask image using a binary threshold to create a mask and then using a bitwise_not application of said mask onto the original
     Arguments:
@@ -25,6 +25,16 @@ def extract_contour(image):
     img_gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     _, mask = cv2.threshold(img_gray, 235, 255, cv2.THRESH_BINARY)
     mask_inv = cv2.bitwise_not(mask)
+    
+    # close image border 
+    square_filler = np.ones((5,5), dtype='uint8')
+    image_close = cv2.morphologyEx(mask_inv, cv2.MORPH_CLOSE, square_filler)
+
+    #get outer most contour and fill inner region
+    cnts = cv2.findContours(image_close, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+    cv2.fillPoly(mask_inv, cnts, [255,255,255])
+
     return cv2.bitwise_and(image, image, mask = mask_inv)
 
 def blackout_background(image,threshold=.05):
@@ -46,7 +56,6 @@ def blackout_background(image,threshold=.05):
         image[loc] = 0
     return image
 
-
 def is_text_image(image, text_threshold=15):
     res = pytesseract.image_to_string(image,lang='eng+jpn')
     if len(res.replace('\n','').replace(' ', '')) > text_threshold:
@@ -58,12 +67,14 @@ def filter_and_clean_directory(input_dir, output_dir):
     output_dir.mkdir(exist_ok=True,parents=True)
     count=200
     for index, image_path in enumerate(Path(input_dir).iterdir()):
-        image = cv2.imread(str(image_path))
+        orig_image = cv2.imread(str(image_path))
         try:
-            if not is_text_image(image):
+            if not is_text_image(orig_image):
                 try:
-                    image = blackout_background(image)
-                    image = extract_contour(image)
+                    #image = blackout_background(orig_image)
+                    #cv2.imwrite('background_removed_image.jpg',orig_image)
+                    image = extract_contour(orig_image)
+                    cv2.imwrite('new_contour_extracted_image.jpg', image)
                     image = get_largest_bbox(image)
                 except Exception as e:  # may catch cv2 assertion if image not correct type
                     print(e, image_path.name, "could not clean image")

@@ -1,7 +1,7 @@
 import argparse
 import os
 
-from detect_text import filter_and_clean_directory
+from segmentation_utils import filter_and_clean_directory
 
 arg_parser = argparse.ArgumentParser(description="preprocessor for workman images")
 arg_parser.add_argument('--input_dir', help='input dir to clean images from')
