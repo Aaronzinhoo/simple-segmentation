@@ -3,20 +3,27 @@ import numpy as np
 import pytesseract # in env_color
 from pathlib import Path
 
-def get_largest_bbox(image):
+def get_largest_bbox(image, original_image):
     """
     returns cropped image that fits largest contour found
     """
     img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     img_blur = cv2.GaussianBlur(img_gray,(5,5),0)
     img_mask = cv2.inRange(img_gray, 1, 255)
-    contours, _ = cv2.findContours(img_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    # find biggest external contour
+    contours, _ = cv2.findContours(img_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     contour_sizes = [(cv2.contourArea(contour), contour) for contour in contours]
     biggest_contour = max(contour_sizes, key=lambda x: x[0])[1]
-    x,y,w,h = cv2.boundingRect(biggest_contour)
-    return image[y:y+h,x:x+w,:]
+    # create a binary mask where the biggest contour is filled with 255
+    biggest_filled_contour_mask = np.zeros_like(image, dtype=np.uint8)
+    biggest_filled_contour_mask = cv2.cvtColor(cv2.drawContours(biggest_filled_contour_mask, [biggest_contour], 0, 255, thickness=-1), cv2.COLOR_BGR2GRAY)
+    # extract the area in original image corresponding to the binary mask
+    biggest_filled_contour_image = original_image.copy()
+    biggest_filled_contour_image[biggest_filled_contour_mask == 0] = [0, 0, 0]
+    x,y,w,h = cv2.boundingRect(biggest_filled_contour_mask)
+    return biggest_filled_contour_image[y:y+h,x:x+w,:]
 
-def extract_contour(image, recovery_image=None):
+def extract_contour(image):
     """
     Mask image using a binary threshold to create a mask and then using a bitwise_not application of said mask onto the original
     Arguments:
@@ -25,16 +32,6 @@ def extract_contour(image, recovery_image=None):
     img_gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     _, mask = cv2.threshold(img_gray, 235, 255, cv2.THRESH_BINARY)
     mask_inv = cv2.bitwise_not(mask)
-    
-    # close image border 
-    square_filler = np.ones((5,5), dtype='uint8')
-    image_close = cv2.morphologyEx(mask_inv, cv2.MORPH_CLOSE, square_filler)
-
-    #get outer most contour and fill inner region
-    cnts = cv2.findContours(image_close, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    cnts = cnts[0] if len(cnts) == 2 else cnts[1]
-    cv2.fillPoly(mask_inv, cnts, [255,255,255])
-
     return cv2.bitwise_and(image, image, mask = mask_inv)
 
 def blackout_background(image,threshold=.05):
@@ -68,14 +65,14 @@ def filter_and_clean_directory(input_dir, output_dir):
     count=200
     for index, image_path in enumerate(Path(input_dir).iterdir()):
         orig_image = cv2.imread(str(image_path))
+        if orig_image is None:
+            continue
+        orig_image_copy = orig_image.copy()
         try:
             if not is_text_image(orig_image):
                 try:
-                    #image = blackout_background(orig_image)
-                    #cv2.imwrite('background_removed_image.jpg',orig_image)
                     image = extract_contour(orig_image)
-                    cv2.imwrite('new_contour_extracted_image.jpg', image)
-                    image = get_largest_bbox(image)
+                    image = get_largest_bbox(image, orig_image_copy)
                 except Exception as e:  # may catch cv2 assertion if image not correct type
                     print(e, image_path.name, "could not clean image")
                     continue
