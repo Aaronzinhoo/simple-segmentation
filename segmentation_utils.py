@@ -120,7 +120,10 @@ def filter_and_clean_directory(input_dir, output_dir):
         if orig_image is None:
             print('Failed to read image')
             continue
-        image = segment_object(orig_image)
-        cv2.imwrite(str(output_dir / image_path.name), image)
+        try:
+            image = segment_object(orig_image)
+            cv2.imwrite(str(output_dir / image_path.name), image)
+        except cv2.error as e:
+            print(f'Failed to write segmented image {image_path.name}\n{e}')
         if index % count == 0:
             print("completed {} images".format(index))
